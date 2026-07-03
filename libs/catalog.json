@@ -1,0 +1,72 @@
+{
+ "net.sf.jopt-simple:jopt-simple:4.5": {
+  "file": "jopt-simple-4.5.jar",
+  "size": 61311,
+  "sha1": "6065cc95c661255349c1d0756657be17c29a4fd3"
+ },
+ "com.paulscode:codecjorbis:20101023": {
+  "file": "codecjorbis-20101023.jar",
+  "size": 103871,
+  "sha1": "c73b5636faf089d9f00e8732a829577de25237ee"
+ },
+ "com.paulscode:codecwav:20101023": {
+  "file": "codecwav-20101023.jar",
+  "size": 5618,
+  "sha1": "12f031cfe88fef5c1dd36c563c0a3a69bd7261da"
+ },
+ "com.paulscode:libraryjavasound:20101123": {
+  "file": "libraryjavasound-20101123.jar",
+  "size": 21679,
+  "sha1": "5c5e304366f75f9eaa2e8cca546a1fb6109348b3"
+ },
+ "com.paulscode:librarylwjglopenal:20100824": {
+  "file": "librarylwjglopenal-20100824.jar",
+  "size": 18981,
+  "sha1": "73e80d0794c39665aec3f62eee88ca91676674ef"
+ },
+ "com.paulscode:soundsystem:20120107": {
+  "file": "soundsystem-20120107.jar",
+  "size": 65020,
+  "sha1": "419c05fe9be71f792b2d76cfc9b67f1ed0fec7f6"
+ },
+ "argo:argo:2.25_fixed": {
+  "file": "argo-2.25_fixed.jar",
+  "size": 74953,
+  "sha1": "751761ce15a3e3aaf3fc75b9f013ff8f7b88a585"
+ },
+ "org.bouncycastle:bcprov-jdk15on:1.47": {
+  "file": "bcprov-jdk15on-1.47.jar",
+  "size": 1997327,
+  "sha1": "b6f5d9926b0afbde9f4dbe3db88c5247be7794bb"
+ },
+ "com.google.guava:guava:14.0": {
+  "file": "guava-14.0.jar",
+  "size": 2189111,
+  "sha1": "67b7be4ee7ba48e4828a42d6d5069761186d4a53"
+ },
+ "org.apache.commons:commons-lang3:3.1": {
+  "file": "commons-lang3-3.1.jar",
+  "size": 315805,
+  "sha1": "905075e6c80f206bbe6cf1e809d2caa69f420c76"
+ },
+ "commons-io:commons-io:2.4": {
+  "file": "commons-io-2.4.jar",
+  "size": 185140,
+  "sha1": "b1b6ea3b7e4aa4f492509a4952029cd8e48019ad"
+ },
+ "net.java.jinput:jinput:2.0.5": {
+  "file": "jinput-2.0.5.jar",
+  "size": 208338,
+  "sha1": "39c7796b469a600f72380316f6b1f11db6c2c7c4"
+ },
+ "net.java.jutils:jutils:1.0.0": {
+  "file": "jutils-1.0.0.jar",
+  "size": 7508,
+  "sha1": "e12fe1fda814bd348c1579329c86943d2cd3c6a6"
+ },
+ "com.google.code.gson:gson:2.2.2": {
+  "file": "gson-2.2.2.jar",
+  "size": 189285,
+  "sha1": "1f96456ca233dec780aa224bff076d8e8bca3908"
+ }
+}

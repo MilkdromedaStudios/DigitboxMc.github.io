@@ -23,7 +23,25 @@ function ensureFflate() {
   return fflateReady;
 }
 
-export const mods = []; // { name, size, bytes }
+export const mods = []; // { name, size, bytes, loader }
+
+// Best-effort mod-loader sniff from filename + zip contents.
+async function detectLoader(name, bytes) {
+  const low = name.toLowerCase();
+  try {
+    await ensureFflate();
+    const entries = Object.keys(self.fflate.unzipSync(bytes));
+    const has = (re) => entries.some((e) => re.test(e));
+    if (has(/^fabric\.mod\.json$/)) return 'Fabric (needs MC 1.14+ — cannot run here)';
+    if (has(/^quilt\.mod\.json$/)) return 'Quilt (needs MC 1.14+ — cannot run here)';
+    if (has(/^META-INF\/mods\.toml$/)) return 'Modern Forge (1.13+ — cannot run here)';
+    if (has(/^mcmod\.info$/)) return 'Forge/FML (1.6–1.12 era)';
+    if (has(/mod_.*\.class$/) || has(/^ModLoader/)) return 'Risugami ModLoader / jar-mod (≤1.5.x)';
+    return 'jar-mod (raw class overrides)';
+  } catch {
+    return low.endsWith('.jar') ? 'jar-mod (unreadable — will try raw merge)' : 'zip';
+  }
+}
 
 export function pickModFiles() {
   const input = document.getElementById('filepick');
@@ -34,8 +52,9 @@ export function pickModFiles() {
       const added = [];
       for (const f of input.files) {
         const bytes = new Uint8Array(await f.arrayBuffer());
-        mods.push({ name: f.name, size: f.size, bytes });
-        added.push(f.name);
+        const loader = await detectLoader(f.name, bytes);
+        mods.push({ name: f.name, size: f.size, bytes, loader });
+        added.push({ name: f.name, loader });
       }
       resolve(added);
     };

@@ -9,7 +9,9 @@ export class Terminal {
     this.inputline = root.querySelector('#inputline');
     this.echo = root.querySelector('#inputecho');
     this.ps1 = root.querySelector('#ps1');
+    this.cmdps1 = document.getElementById('cmdps1');
     this.kbd = document.getElementById('kbd');
+    this.runbtn = document.getElementById('runbtn');
     this.history = [];
     this.histIdx = -1;
     this.histStash = '';
@@ -20,15 +22,25 @@ export class Terminal {
 
     this.kbd.addEventListener('input', () => this._sync());
     this.kbd.addEventListener('keydown', (e) => this._onKey(e));
-    // focus keyboard whenever the terminal is tapped/clicked
-    this.el.addEventListener('pointerup', () => {
+    // RUN button (touch) submits the current line, same path as Enter
+    this.runbtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this._enter();
+      this.focus();
+    });
+    // focus keyboard whenever the terminal is tapped/clicked (desktop aid)
+    this.el.addEventListener('pointerup', (e) => {
+      if (e.target === this.kbd || e.target === this.runbtn) return;
       if (!window.getSelection()?.toString()) this.focus();
     });
   }
 
   focus() { this.kbd.focus({ preventScroll: true }); }
 
-  setPrompt(text) { this.ps1.textContent = text; }
+  setPrompt(text) {
+    this.ps1.textContent = text;
+    if (this.cmdps1) this.cmdps1.textContent = text.trim();
+  }
 
   print(text = '', cls = '') {
     const div = document.createElement('div');
@@ -99,28 +111,34 @@ export class Terminal {
     return a === 'y' || a === 'yes';
   }
 
+  // Submit the current input line. Shared by Enter and the RUN button.
+  _enter() {
+    if (this.busy && !this._askResolve) return;
+    const line = this.kbd.value;
+    this.kbd.value = '';
+    this._sync();
+    this.print(this.ps1.textContent + line, 'c-bright');
+    if (this._askResolve) {
+      const r = this._askResolve;
+      this._askResolve = null;
+      this._lock();
+      r(line);
+      return;
+    }
+    if (line.trim()) {
+      this.history.push(line);
+      if (this.history.length > 200) this.history.shift();
+    }
+    this.histIdx = -1;
+    this._lock();
+    Promise.resolve(this.onCommand?.(line)).finally(() => this.ready());
+  }
+
   _onKey(e) {
     if (this.busy && !this._askResolve) return;
     if (e.key === 'Enter') {
       e.preventDefault();
-      const line = this.kbd.value;
-      this.kbd.value = '';
-      this._sync();
-      this.print(this.ps1.textContent + line, 'c-bright');
-      if (this._askResolve) {
-        const r = this._askResolve;
-        this._askResolve = null;
-        this._lock();
-        r(line);
-        return;
-      }
-      if (line.trim()) {
-        this.history.push(line);
-        if (this.history.length > 200) this.history.shift();
-      }
-      this.histIdx = -1;
-      this._lock();
-      Promise.resolve(this.onCommand?.(line)).finally(() => this.ready());
+      this._enter();
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       if (!this.history.length) return;
