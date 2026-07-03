@@ -114,16 +114,76 @@ a { color: var(--cyan); }
 }
 @keyframes blink { 50% { opacity: 0; } }
 
-/* hidden real input that captures keys (and summons soft keyboards) */
+/* command bar. On desktop it's an empty collapsed row holding the invisible
+   capture input; on touch it becomes a visible docked input bar. */
+#cmdbar {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  min-height: 0;
+}
+#cmdps1, #runbtn { display: none; }
+
+/* desktop: #kbd is the invisible key-capture input (fake cursor shows input) */
 #kbd {
-  position: absolute;
   opacity: 0.01;
   height: 1px; width: 1px;
-  bottom: 0; left: 0;
-  border: 0; padding: 0;
+  border: 0; padding: 0; margin: 0;
   background: transparent;
   color: transparent;
   caret-color: transparent;
+  font-family: var(--mono);
+}
+#kbd::placeholder { color: transparent; }
+
+/* touch: show a real, tappable command bar so the soft keyboard opens on the
+   first tap — no more poking the screen hoping focus() fires. */
+@media (pointer: coarse) {
+  #inputline { display: none !important; }
+  #cmdbar {
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+    background: #0a140a;
+    border: 1px solid var(--fg-dim);
+  }
+  #cmdps1 {
+    display: inline;
+    color: var(--fg-bright);
+    font-size: 12px;
+    white-space: nowrap;
+    max-width: 42vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #kbd {
+    opacity: 1;
+    flex: 1;
+    min-width: 0;
+    height: auto;
+    width: auto;
+    font-size: 16px; /* >=16px stops iOS auto-zoom */
+    color: var(--fg-bright);
+    caret-color: var(--fg-bright);
+    background: #050805;
+    border: 1px solid var(--fg-dim);
+    padding: 10px 10px;
+  }
+  #kbd::placeholder { color: var(--fg-dim); }
+  #runbtn {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: bold;
+    color: #050805;
+    background: var(--fg);
+    border: 0;
+    padding: 0 14px;
+    min-height: 42px;
+    cursor: pointer;
+  }
+  #runbtn:active { background: var(--fg-bright); }
 }
 
 /* quick-command chips (mostly for touch) */
@@ -188,33 +248,42 @@ a { color: var(--cyan); }
   overflow: hidden;
 }
 
-/* on-screen touch keys */
+/* on-screen touch keys — split pad: movement bottom-left, actions bottom-right */
 #touchkeys {
   position: absolute;
-  left: 10px;
-  bottom: 12px;
+  inset: auto 0 0 0;
   z-index: 20;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  opacity: 0.85;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 0 12px calc(14px + env(safe-area-inset-bottom));
+  pointer-events: none;
 }
 #touchkeys[hidden] { display: none; }
-.tk-row { display: flex; gap: 6px; justify-content: center; }
+.tk-move, .tk-action {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: auto;
+  opacity: 0.9;
+}
+.tk-row { display: flex; gap: 8px; justify-content: center; }
 #touchkeys button {
   font-family: var(--mono);
-  min-width: 48px;
-  min-height: 44px;
-  font-size: 13px;
+  min-width: 56px;
+  min-height: 52px;
+  font-size: 14px;
+  font-weight: bold;
   color: var(--fg-bright);
-  background: rgba(10, 25, 10, 0.75);
-  border: 1px solid var(--fg-dim);
+  background: rgba(10, 25, 10, 0.8);
+  border: 1px solid var(--fg);
+  border-radius: 6px;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
 }
 #touchkeys button:active { background: var(--sel); }
-.tk-row.wide button { min-width: 60px; }
+#touchkeys button[data-mouse] { border-color: var(--amber); color: var(--amber); }
 
 @media (max-width: 640px) {
   #terminal { font-size: 13px; }

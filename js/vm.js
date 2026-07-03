@@ -59,6 +59,47 @@ function loadScript(src) {
   });
 }
 
+// Preload hint list (from Leaning Technologies' Browsercraft) — lets CheerpJ
+// fetch the hot runtime chunks in parallel instead of on demand, which cuts
+// cold JVM boot time substantially.
+const PRELOAD = {
+  '/lt/8/jre/lib/rt.jar': [0, 131072, 1310720, 1572864, 4456448, 4849664, 5111808, 5505024, 7995392, 8126464, 9699328, 9830400, 9961472, 11534336, 11665408, 12189696, 12320768, 12582912, 13238272, 13369344, 15073280, 15335424, 15466496, 15597568, 15990784, 16121856, 16252928, 16384000, 16777216, 16908288, 17039360, 17563648, 17694720, 17825792, 17956864, 18087936, 18219008, 18612224, 18743296, 18874368, 19005440, 19136512, 19398656, 19791872, 20054016, 20709376, 20840448, 21757952, 21889024, 26869760],
+  '/lt/etc/users': [0, 131072],
+  '/lt/etc/localtime': [],
+  '/lt/8/jre/lib/cheerpj-awt.jar': [0, 131072],
+  '/lt/8/lib/ext/meta-index': [0, 131072],
+  '/lt/8/lib/ext': [],
+  '/lt/8/lib/ext/index.list': [],
+  '/lt/8/lib/ext/localedata.jar': [],
+  '/lt/8/jre/lib/jsse.jar': [0, 131072, 786432, 917504],
+  '/lt/8/jre/lib/jce.jar': [0, 131072],
+  '/lt/8/jre/lib/charsets.jar': [0, 131072, 1703936, 1835008],
+  '/lt/8/jre/lib/resources.jar': [0, 131072, 917504, 1179648],
+  '/lt/8/jre/lib/javaws.jar': [0, 131072, 1441792, 1703936],
+  '/lt/8/lib/ext/sunjce_provider.jar': [],
+  '/lt/8/lib/security/java.security': [0, 131072],
+  '/lt/8/jre/lib/meta-index': [0, 131072],
+  '/lt/8/jre/lib': [],
+  '/lt/8/lib/accessibility.properties': [],
+  '/lt/8/lib/fonts/LucidaSansRegular.ttf': [],
+  '/lt/8/lib/currency.data': [0, 131072],
+  '/lt/8/lib/currency.properties': [],
+  '/lt/libraries/libGLESv2.so.1': [0, 262144],
+  '/lt/libraries/libEGL.so.1': [0, 262144],
+  '/lt/8/lib/fonts/badfonts.txt': [],
+  '/lt/8/lib/fonts': [],
+  '/lt/etc/hosts': [],
+  '/lt/etc/resolv.conf': [0, 131072],
+  '/lt/8/lib/fonts/fallback': [],
+  '/lt/fc/fonts/fonts.conf': [0, 131072],
+  '/lt/fc/ttf': [],
+  '/lt/fc/cache/e21edda6a7db77f35ca341e0c3cb2a22-le32d8.cache-7': [0, 131072],
+  '/lt/fc/ttf/LiberationSans-Regular.ttf': [0, 131072, 262144, 393216],
+  '/lt/8/lib/jaxp.properties': [],
+  '/lt/etc/timezone': [],
+  '/lt/8/lib/tzdb.dat': [0, 131072],
+};
+
 export async function bootJvm(displayEl, log) {
   if (jvmReady) return;
   log?.('Fetching CheerpJ runtime (WebAssembly JVM) from cjrtnc.leaningtech.com …');
@@ -69,10 +110,88 @@ export async function bootJvm(displayEl, log) {
     javaProperties: ['java.library.path=' + appPath('lwjgl/libraries/')],
     libraries: { 'libGL.so.1': appPath('lwjgl/libraries/gl4es.wasm') },
     enableX11: true,
+    preloadResources: PRELOAD,
   });
   cheerpjCreateDisplay(-1, -1, displayEl);
   jvmReady = true;
   log?.('JVM online.');
+}
+
+// ---------- launch planning ----------
+
+let libCatalog = null; // "group:artifact:version" -> { file, size, sha1 }
+
+async function getCatalog() {
+  if (libCatalog) return libCatalog;
+  const res = await fetch(BASE + 'libs/catalog.json');
+  libCatalog = res.ok ? await res.json() : {};
+  return libCatalog;
+}
+
+// Work out exactly how (or why not) a version can run in the browser JVM.
+// Returns { entry, classpath, gates:[{code,detail}], unresolved:[names],
+//           resolvedLibs:[{name,via}] }.
+export async function resolveLaunchPlan(json) {
+  const catalog = await getCatalog();
+  const gates = [];
+  const unresolved = [];
+  const resolvedLibs = [];
+  const classpath = [appPath('lwjgl/lwjgl-2.9.3.jar'), appPath('lwjgl/lwjgl_util-2.9.3.jar')];
+
+  const javaMajor = json.javaVersion?.majorVersion ?? 8;
+  if (javaMajor > 8) {
+    gates.push({
+      code: 'java',
+      detail: `needs Java ${javaMajor}; the browser JVM (CheerpJ) provides Java 8`,
+    });
+  }
+
+  const byArtifact = {}; // fallback: same group:artifact, any bundled version
+  for (const [name, entry] of Object.entries(catalog)) {
+    byArtifact[name.split(':').slice(0, 2).join(':')] = entry;
+  }
+
+  let lwjgl3 = false;
+  for (const lib of json.libraries ?? []) {
+    const name = lib.name ?? '';
+    if (!lib.downloads?.artifact && !name) continue;
+    if (name.startsWith('org.lwjgl.lwjgl:')) { resolvedLibs.push({ name, via: 'vm' }); continue; } // LWJGL2 → our CheerpJ build
+    if (name.startsWith('org.lwjgl:')) { lwjgl3 = true; continue; }
+    if (!lib.downloads?.artifact) continue; // natives-only entry
+    if (lib.rules && !rulesAllow(lib.rules)) continue;
+    const exact = catalog[name];
+    const near = byArtifact[name.split(':').slice(0, 2).join(':')];
+    if (exact) {
+      classpath.push(appPath('libs/' + exact.file));
+      resolvedLibs.push({ name, via: 'bundled' });
+    } else if (near) {
+      classpath.push(appPath('libs/' + near.file));
+      resolvedLibs.push({ name, via: 'bundled≈' + near.file });
+    } else {
+      unresolved.push(name);
+    }
+  }
+  if (lwjgl3) {
+    gates.push({
+      code: 'lwjgl3',
+      detail: 'needs LWJGL3 native bindings, which do not exist for the browser JVM',
+    });
+  }
+
+  let entry = json.mainClass ?? 'net.minecraft.client.Minecraft';
+  if (entry === 'net.minecraft.launchwrapper.Launch') entry = 'net.minecraft.client.Minecraft';
+
+  return { entry, classpath, gates, unresolved, resolvedLibs };
+}
+
+function rulesAllow(rules) {
+  // library rules gate on OS; we impersonate linux (CheerpJ's personality)
+  let allow = false;
+  for (const r of rules) {
+    const osMatch = !r.os || r.os.name === 'linux';
+    if (osMatch) allow = r.action === 'allow';
+  }
+  return allow;
 }
 
 // write bytes into the JVM's ephemeral /files/ mount
@@ -88,30 +207,13 @@ export function writeVmFile(path, bytes) {
   });
 }
 
-// Resolve the entry point actually runnable under the browser JVM.
-// Pre-1.6 clients expose net.minecraft.client.Minecraft.main() (the
-// launchwrapper in their metadata is just Mojang's shim); 1.6+ moved to
-// net.minecraft.client.main.Main which needs the asset pipeline + args and
-// (1.13+) LWJGL3 — not runnable here.
-export function entryPointFor(versionJson) {
-  const mc = versionJson.mainClass ?? '';
-  if (mc.startsWith('net.minecraft.client.main.Main')) return null;
-  if (mc === 'net.minecraft.launchwrapper.Launch') return 'net.minecraft.client.Minecraft';
-  return mc || 'net.minecraft.client.Minecraft';
-}
-
-export async function launchGame({ id, entry, jarBytes, username }) {
+export async function launchGame({ id, plan, jarBytes, args }) {
   const jarPath = `/files/client_${id.replace(/[^A-Za-z0-9._-]/g, '_')}.jar`;
   await writeVmFile(jarPath, jarBytes);
-  const classpath = [
-    appPath('lwjgl/lwjgl-2.9.3.jar'),
-    appPath('lwjgl/lwjgl_util-2.9.3.jar'),
-    jarPath,
-  ].join(':');
-  const args = username ? [username, '-'] : [];
+  const classpath = [...plan.classpath, jarPath].join(':');
   gameRunning = true;
   try {
-    return await cheerpjRunMain(entry, classpath, ...args);
+    return await cheerpjRunMain(plan.entry, classpath, ...args);
   } finally {
     gameRunning = false;
   }

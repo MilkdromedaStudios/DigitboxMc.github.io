@@ -14,6 +14,8 @@ const state = {
   eulaAccepted: false, // per session, never persisted
 };
 
+const jarCache = new Map(); // version id -> client jar bytes (RAM only)
+
 // ---------------- commands ----------------
 
 const commands = {
@@ -39,14 +41,26 @@ const commands = {
         ['  • The untouched Minecraft client jar streams from Mojang\'s official'],
         ['    CDN at launch. This repo hosts zero Mojang code or assets.'],
         ['  • Version data comes live from piston-meta.mojang.com.'],
+        ['  • ANY version can attempt a launch: the resolver builds the real'],
+        ['    launcher pipeline (libraries, arguments) and tells you exactly'],
+        ['    what runs and what blocks. --force lets doomed attempts try anyway.'],
         ['  • Jar mods are genuinely injected (ModLoader/early-Forge style).'],
+        ['  • Downloads are cached in RAM for instant relaunches this session.'],
         ['  • Nothing persists: all storage is wiped at every boot.'],
         [''],
-        ['HARD LIMITS (physics, not laziness)', 'c-warn'],
-        ['  • 1.2.5 is the proven build. Older pre-1.6 builds are experimental.'],
-        ['  • 1.6+ cannot run: new launcher pipeline; 1.13+ needs LWJGL3 natives'],
-        ['    a browser JVM cannot provide. So no Fabric (needs 1.14+) and no'],
-        ['    modern Forge — jar-mod era Forge/ModLoader mods only.'],
+        ['HARD LIMITS (physics + law, not laziness)', 'c-warn'],
+        ['  • 1.2.5 is the proven build. Pre-1.6 (alphas, betas, 1.0–1.5.2) use'],
+        ['    the direct Minecraft entry and render — attempt them via play.'],
+        ['  • 1.6.x start but BLACK-SCREEN: they use the newer Main launcher'],
+        ['    pipeline the browser JVM has no working asset/LWJGL init for.'],
+        ['  • 1.7.2–1.12.2 are LOCKED: they need Mojang\'s proprietary authlib,'],
+        ['    served only from a CDN that blocks browser fetches (no CORS) and'],
+        ['    illegal to re-host. Every pure browser launcher hits this wall —'],
+        ['    third-party launcher mirrors (TLauncher etc.) are unauthorized'],
+        ['    re-hosting, which this machine will not do.'],
+        ['  • 1.13+ additionally need LWJGL3 natives and (1.17+) Java 17: beyond'],
+        ['    a browser JVM. So no Fabric (needs 1.14+) and no modern Forge —'],
+        ['    jar-mod era Forge/ModLoader mods only.'],
         ['  • Microsoft sign-in is impossible from a static page (Xbox auth'],
         ['    endpoints reject cross-origin browsers). Offline profile only,'],
         ['    singleplayer only.'],
@@ -136,27 +150,75 @@ const commands = {
   },
 
   launch: {
-    desc: 'boot the VM and run a version: launch <id>',
+    desc: 'try to run any version: launch <id> [--force]',
     async run(args) {
-      const id = args[0] ?? '1.2.5';
+      if (vm.isGameRunning()) return term.print('a game is already running — hit POWER first', 'c-warn');
+      const force = args.includes('--force');
+      const id = args.filter((a) => !a.startsWith('--'))[0] ?? '1.2.5';
       await mojang.getManifest();
       const v = mojang.findVersion(id);
       if (!v) return term.print(`unknown version '${id}' — see 'versions all ${esc(id)}'`, 'c-err');
       const tier = mojang.tierOf(v);
       const j = await mojang.getVersionJson(v.id);
-      const entry = vm.entryPointFor(j);
+      if (!j.downloads?.client?.url) return term.print(`Mojang metadata for ${v.id} has no client jar URL.`, 'c-err');
 
-      if (tier === 'unsupported' || !entry) {
-        term.print(`✖ ${v.id} cannot run in a browser JVM.`, 'c-err');
-        term.print(tierNote('unsupported'), 'c-dim');
-        term.print("pre-1.6 versions are launchable — start with: launch 1.2.5", 'c-dim');
+      // resolve: work out exactly how (or why not) this version can run
+      const plan = await vm.resolveLaunchPlan(j);
+      const bundled = plan.resolvedLibs.filter((l) => l.via !== 'vm').length;
+      term.print(`resolve ${v.id} ▸ entry ${plan.entry}`, 'c-dim');
+      term.print(`  libraries: ${plan.resolvedLibs.length} resolved` +
+        (bundled ? ` (${bundled} bundled open-source, LWJGL via VM build)` : '') +
+        (plan.unresolved.length ? `, ${plan.unresolved.length} not bundled` : ''), plan.unresolved.length ? 'c-warn' : 'c-dim');
+
+      // LOCKED (1.7.2–1.12.2): the missing library is Mojang's proprietary
+      // authlib, served only from a CDN that blocks browsers. Hard wall — no
+      // flag, no mirror this project will touch.
+      if (tier === 'locked') {
+        const authlibish = plan.unresolved.filter((n) => /authlib|mojang/.test(n));
+        (authlibish.length ? authlibish : plan.unresolved.slice(0, 3)).forEach((n) => term.print('    ✖ ' + n, 'c-err'));
+        term.print('LOCKED — no flag can fix this:', 'c-err');
+        term.print("  Needs Mojang's proprietary authlib. libraries.minecraft.net blocks", 'c-dim');
+        term.print('  browser fetches (no CORS) and re-hosting it is unlawful — the wall', 'c-dim');
+        term.print('  every pure browser launcher hits (incl. why TLauncher-style mirrors', 'c-dim');
+        term.print('  are off-limits here).', 'c-dim');
+        term.print("Playable now: run 'play' to see the list.", 'c-info');
         return;
       }
-      if (tier === 'experimental') {
+
+      // The entry point is the real predictor: only the pre-1.6
+      // net.minecraft.client.Minecraft path renders under this browser JVM.
+      const directEntry = plan.entry === 'net.minecraft.client.Minecraft';
+
+      // BLANK (1.6.x) — starts but black-screens; and any other Main-pipeline
+      // build that slipped past the date tiers.
+      if (!directEntry || tier === 'norender' || tier === 'unsupported') {
+        plan.gates.forEach((g) => term.print(`  ⛔ ${g.detail}`, 'c-err'));
+        if (tier === 'unsupported' && !plan.gates.length) {
+          term.print('  ⛔ post-1.12 launcher pipeline beyond the browser JVM', 'c-err');
+        } else if (tier !== 'unsupported') {
+          term.print(`  ⛔ uses ${plan.entry} (post-1.5 launcher pipeline): starts but`, 'c-err');
+          term.print('     black-screens under the browser JVM — no working asset/LWJGL init', 'c-err');
+        }
+        if (!force) {
+          term.print('Expected to black-screen. To watch it try anyway:', 'c-warn');
+          term.print(`    launch ${v.id} --force`, 'c-bright');
+          term.print("Playable now: run 'play' to see the list.", 'c-info');
+          return;
+        }
+        term.print('  --force: attempting anyway. Expect a black screen — that IS the result.', 'c-warn');
+      }
+
+      // Missing metadata libs on the direct-entry path are launcher-side
+      // (launchwrapper, asm) and not needed to reach the game. Warn, don't block.
+      if (plan.unresolved.length) {
+        term.print(`  note: ${plan.unresolved.length} metadata lib(s) not bundled (${plan.unresolved.slice(0, 3).join(', ')}${plan.unresolved.length > 3 ? ', …' : ''});`, 'c-dim');
+        term.print('  attempting with client jar + resolved libs anyway.', 'c-dim');
+      }
+
+      if (directEntry && tier !== 'supported' && !force) {
         term.print(`⚠ ${v.id} is EXPERIMENTAL under the browser JVM — 1.2.5 is the proven build.`, 'c-warn');
         if (!(await term.confirm('Attempt launch anyway?'))) return term.print('aborted', 'c-dim');
       }
-      if (!j.downloads?.client?.url) return term.print(`Mojang metadata for ${v.id} has no client jar URL.`, 'c-err');
 
       if (!state.eulaAccepted) {
         term.print('Launching downloads the official client from Mojang\'s CDN.', 'c-info');
@@ -171,12 +233,18 @@ const commands = {
       try {
         await vm.bootJvm(display, (t) => term.print('[vm] ' + t, 'c-dim'));
 
-        const url = j.downloads.client.url;
-        term.print(`GET ${url}`, 'c-dim');
-        const live = term.liveLine('c-info');
-        let jar = await mojang.download(url, (got, total) =>
-          live(progressBar('client.jar', got, total)));
-        live(progressBar('client.jar', jar.length, jar.length) + '  done');
+        let jar = jarCache.get(v.id);
+        if (jar) {
+          term.print(`client ${v.id} cached in RAM (${(jar.length / 1048576).toFixed(1)} MiB) — skipping download`, 'c-ok');
+        } else {
+          const url = j.downloads.client.url;
+          term.print(`GET ${url}`, 'c-dim');
+          const live = term.liveLine('c-info');
+          jar = await mojang.download(url, (got, total) =>
+            live(progressBar('client.jar', got, total)));
+          live(progressBar('client.jar', jar.length, jar.length) + '  done');
+          jarCache.set(v.id, jar);
+        }
 
         if (mods.length) {
           term.print(`Applying ${mods.length} jar mod(s) to ${v.id} …`, 'c-info');
@@ -185,22 +253,68 @@ const commands = {
         }
 
         const user = state.user ?? 'Player' + String(Math.floor(Math.random() * 900) + 100);
-        term.print(`Starting ${entry} as '${user}' — sandboxed, nothing will be saved.`, 'c-ok');
+        const gameArgs = plan.entry === 'net.minecraft.client.Minecraft'
+          ? [user, '-']
+          : mojang.buildGameArgs(j, { username: user, gameDir: '/files/mc', assetsDir: '/files/mc/assets' });
+        term.print(`Starting ${plan.entry} as '${user}' — sandboxed, nothing will be saved.`, 'c-ok');
         term.print('POWER button (top right) exits and wipes the sandbox.', 'c-dim');
         await sleep(400);
 
         gametitle.textContent = `MCVM ▸ minecraft ${v.id} ▸ ${user} ▸ ephemeral`;
         gamepanel.hidden = false;
-        await vm.launchGame({ id: v.id, entry, jarBytes: jar, username: state.user ? user : null });
+        await vm.launchGame({ id: v.id, plan, jarBytes: jar, args: gameArgs });
 
         // main() returned — game closed from inside
         gamepanel.hidden = true;
         term.print(`minecraft ${v.id} exited. Sandbox contents discarded on reboot.`, 'c-info');
       } catch (e) {
         gamepanel.hidden = true;
-        term.print('launch failed: ' + e.message, 'c-err');
-        if (tier === 'experimental') term.print('experimental builds fail in many ways — 1.2.5 is the reliable one.', 'c-dim');
+        term.print('launch failed: ' + (e?.message ?? String(e)), 'c-err');
+        if (tier !== 'supported') term.print('experimental builds fail in many ways — 1.2.5 is the reliable one.', 'c-dim');
       }
+    },
+  },
+
+  play: {
+    desc: 'pick a playable version from a menu (great on mobile)',
+    async run(args) {
+      await mojang.getManifest();
+      // proven + a curated set of notable pre-1.6 builds (direct-entry era)
+      const notable = ['1.2.5', '1.5.2', '1.4.7', '1.3.2', '1.1', '1.0', 'b1.7.3', 'a1.2.6'];
+      const rows = notable
+        .map((id) => mojang.findVersion(id))
+        .filter(Boolean)
+        .map((v) => ({ v, tier: mojang.tierOf(v) }))
+        .filter((r) => r.tier === 'supported' || r.tier === 'experimental');
+      term.print('PLAYABLE — 1.2.5 is proven; the rest are pre-1.6 experimental attempts', 'c-bright');
+      rows.forEach((r, i) => {
+        const lbl = mojang.TIER_LABEL[r.tier];
+        term.printHTML(`  <span class="c-bright">${i + 1})</span> ${esc(r.v.id.padEnd(10))} ` +
+          `<span class="${lbl.cls}">${lbl.text}</span>  <span class="c-dim">${r.v.type} · ${r.v.releaseTime.slice(0, 10)}</span>`);
+      });
+      term.print('Any pre-1.6 build can be tried directly too, e.g. launch b1.6', 'c-dim');
+      term.print('1.6.x black-screen, 1.7–1.12 LOCKED (authlib), 1.13+ need LWJGL3 — see about', 'c-dim');
+      const pick = (await term.ask('Enter a number to play (blank to cancel):', 'play #> ')).trim();
+      if (!pick) return term.print('cancelled', 'c-dim');
+      const idx = parseInt(pick, 10) - 1;
+      if (isNaN(idx) || !rows[idx]) return term.print('not a valid choice', 'c-warn');
+      await commands.launch.run([rows[idx].v.id]);
+    },
+  },
+
+  loaders: {
+    desc: 'list mod loaders present in this VM',
+    run() {
+      term.print('MOD LOADERS', 'c-bright');
+      term.printHTML(`  <span class="badge-ok">PRESENT</span>  jar-mod injection (Risugami ModLoader / early-Forge style)`);
+      [
+        '    How: staged jars are merged into the client jar in-browser and',
+        '    META-INF is stripped. This is the real ≤1.5.x install method, so',
+        "    era-appropriate ModLoader/Forge mods load. Use 'mods add'.",
+      ].forEach((t) => term.print(t, 'c-dim'));
+      term.printHTML(`  <span class="badge-no">ABSENT</span>   Fabric / Quilt — loader needs MC 1.14+ (1.13+ won't run here)`);
+      term.printHTML(`  <span class="badge-no">ABSENT</span>   Modern Forge (1.6+ installer) — needs a JVM-side install + authlib-era libs`);
+      term.print("Add a mod with 'mods add'; its detected loader is shown in 'mods'.", 'c-info');
     },
   },
 
@@ -212,7 +326,7 @@ const commands = {
         term.print('opening file picker — select .jar/.zip mods (ModLoader / jar-mod era) …', 'c-info');
         const added = await pickModFiles();
         if (!added || !added.length) return term.print('no files selected', 'c-dim');
-        added.forEach((n) => term.print('  + ' + n, 'c-ok'));
+        added.forEach((m) => term.print(`  + ${m.name}  [loader: ${m.loader}]`, 'c-ok'));
         term.print(`${mods.length} mod(s) staged in RAM — they are injected at 'launch'.`, 'c-ok');
         return;
       }
@@ -229,7 +343,7 @@ const commands = {
       }
       term.print('MOD BAY — in-memory only, wiped on reboot', 'c-bright');
       if (!mods.length) term.print('  (empty — stage mods with: mods add)');
-      mods.forEach((m, i) => term.print(`  ${i + 1}. ${m.name}  ${(m.size / 1024).toFixed(0)} KiB`));
+      mods.forEach((m, i) => term.print(`  ${i + 1}. ${m.name}  ${(m.size / 1024).toFixed(0)} KiB  [${m.loader ?? 'jar-mod'}]`));
       [
         '',
         'How it works: staged jars are merged into the client jar in-browser and',
@@ -324,9 +438,11 @@ commands.creeper = { desc: '', hidden: true, run() { term.print('  ssssss… aw 
 
 function tierNote(tier) {
   return {
-    supported: 'verified running under the WASM JVM',
-    experimental: 'pre-1.6 entry point exists; may run, may crash — try it',
-    unsupported: '1.6+ launcher pipeline / LWJGL3 natives are beyond a browser JVM',
+    supported: 'verified rendering under the WASM JVM',
+    experimental: 'pre-1.6 direct-entry era — attempts and often reaches a screen; may crash',
+    norender: 'starts but black-screens: 1.6.x Main pipeline has no working asset/LWJGL init here',
+    locked: "needs Mojang's proprietary authlib; its CDN blocks browsers (no CORS) and re-hosting is illegal — impossible for any pure browser launcher",
+    unsupported: 'needs LWJGL3 natives / newer Java than the browser JVM provides',
   }[tier];
 }
 
@@ -354,7 +470,7 @@ term.completer = (tokens) => {
   }
   const cmd = tokens[0].toLowerCase();
   if ((cmd === 'launch' || cmd === 'info') && mojang.manifestCache()) {
-    return mojang.manifestCache().versions.map((v) => v.id);
+    return [...mojang.manifestCache().versions.map((v) => v.id), ...(cmd === 'launch' ? ['--force'] : [])];
   }
   if (cmd === 'versions') return ['release', 'beta', 'alpha', 'snapshot', 'all'];
   if (cmd === 'mods') return ['add', 'rm', 'clear'];
@@ -390,11 +506,26 @@ function sendKey(code, type) {
   (display.querySelector('canvas') ?? display).dispatchEvent(ev);
   document.dispatchEvent(ev);
 }
+function sendMouse(button, type) {
+  const canvas = display.querySelector('canvas') ?? display;
+  const r = canvas.getBoundingClientRect();
+  const x = r.left + r.width / 2, y = r.top + r.height / 2; // aim at crosshair
+  const ev = new MouseEvent(type, { button, buttons: type === 'mousedown' ? (button === 0 ? 1 : 2) : 0, clientX: x, clientY: y, bubbles: true, cancelable: true });
+  canvas.dispatchEvent(ev);
+}
 for (const btn of touchkeys.querySelectorAll('button')) {
   const code = btn.dataset.key;
-  btn.addEventListener('pointerdown', (e) => { e.preventDefault(); sendKey(code, 'keydown'); });
-  btn.addEventListener('pointerup', (e) => { e.preventDefault(); sendKey(code, 'keyup'); });
-  btn.addEventListener('pointercancel', () => sendKey(code, 'keyup'));
+  const mouse = btn.dataset.mouse;
+  if (mouse != null) {
+    const b = +mouse;
+    btn.addEventListener('pointerdown', (e) => { e.preventDefault(); sendMouse(b, 'mousedown'); });
+    btn.addEventListener('pointerup', (e) => { e.preventDefault(); sendMouse(b, 'mouseup'); sendMouse(b, 'click'); });
+    btn.addEventListener('pointercancel', () => sendMouse(b, 'mouseup'));
+  } else {
+    btn.addEventListener('pointerdown', (e) => { e.preventDefault(); sendKey(code, 'keydown'); });
+    btn.addEventListener('pointerup', (e) => { e.preventDefault(); sendKey(code, 'keyup'); });
+    btn.addEventListener('pointercancel', () => sendKey(code, 'keyup'));
+  }
 }
 
 // quick-command chips (touch aid)
@@ -464,17 +595,19 @@ async function boot() {
     ...banner,
     ['', '', 30],
     ['Sandboxed Minecraft Java VM — in your browser, forgetting by design.', '', 50],
-    ["Type 'help' for commands, 'about' for what's real, or jump in:", '', 40],
+    ["Type 'play' to pick a version, 'help' for commands, 'about' for what's real:", '', 40],
     ['', '', 20],
+    ['    play', 'c-bright', 20],
     ['    launch 1.2.5', 'c-bright', 40],
     ['', '', 20],
     ['Not an official Minecraft product; not approved by or associated with', 'c-dim', 20],
     ['Mojang or Microsoft. Game code streams from Mojang at runtime.', 'c-dim', 20],
   ], 40);
 
-  if (matchMedia('(pointer: coarse)').matches) chips.hidden = false;
+  const touch = matchMedia('(pointer: coarse)').matches;
+  if (touch) chips.hidden = false;
   term.ready();
-  term.focus();
+  if (!touch) term.focus(); // on touch, let the user tap the visible bar (avoids a forced keyboard pop)
 }
 
 boot();

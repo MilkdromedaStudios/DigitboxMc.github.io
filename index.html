@@ -23,14 +23,19 @@
       </div>
     </div>
     <div id="chips" hidden>
+      <button data-cmd="play">▶ play</button>
       <button data-cmd="help">help</button>
       <button data-cmd="versions">versions</button>
-      <button data-cmd="launch 1.2.5">launch 1.2.5</button>
+      <button data-cmd="loaders">loaders</button>
       <button data-cmd="mods add">mods add</button>
-      <button data-cmd="sandbox">sandbox</button>
-      <button data-cmd="sysinfo">sysinfo</button>
+      <button data-cmd="about">about</button>
     </div>
-    <input id="kbd" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="terminal input">
+    <!-- command bar: invisible capture input on desktop, visible docked bar on touch -->
+    <div id="cmdbar">
+      <span id="cmdps1">guest@digitbox:~$</span>
+      <input id="kbd" type="text" enterkeyhint="go" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="terminal command input" placeholder="type a command…">
+      <button id="runbtn" type="button">RUN</button>
+    </div>
   </div>
 
   <!-- Game video output -->
@@ -44,17 +49,27 @@
     </div>
     <div id="display"></div>
     <div id="touchkeys" hidden>
-      <div class="tk-row"><button data-key="KeyW">W</button></div>
-      <div class="tk-row">
-        <button data-key="KeyA">A</button>
-        <button data-key="KeyS">S</button>
-        <button data-key="KeyD">D</button>
+      <div class="tk-move">
+        <div class="tk-row"><button data-key="KeyW">W</button></div>
+        <div class="tk-row">
+          <button data-key="KeyA">A</button>
+          <button data-key="KeyS">S</button>
+          <button data-key="KeyD">D</button>
+        </div>
+        <div class="tk-row">
+          <button data-key="Space">JUMP</button>
+          <button data-key="ShiftLeft">SNK</button>
+        </div>
       </div>
-      <div class="tk-row wide">
-        <button data-key="Space">JUMP</button>
-        <button data-key="ShiftLeft">SNEAK</button>
-        <button data-key="KeyE">INV</button>
-        <button data-key="Escape">ESC</button>
+      <div class="tk-action">
+        <div class="tk-row">
+          <button data-mouse="0">MINE</button>
+          <button data-mouse="2">USE</button>
+        </div>
+        <div class="tk-row">
+          <button data-key="KeyE">INV</button>
+          <button data-key="Escape">ESC</button>
+        </div>
       </div>
     </div>
   </div>
