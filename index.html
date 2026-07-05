@@ -4,48 +4,35 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#050805">
-  <title>DIGITBOX MCVM — browser Minecraft sandbox terminal</title>
-  <meta name="description" content="A sandboxed terminal VM that runs real Minecraft Java in your browser via a WebAssembly JVM. Nothing is saved. Not an official Minecraft product.">
+  <title>DIGITBOX DEV VM — free browser Minecraft modding VM</title>
+  <meta name="description" content="A free in-browser Minecraft modding dev VM: a real terminal boots, walks you through picking a version and adding mods, then runs the game on a WebAssembly JVM. Nothing installed, nothing saved. Not an official Minecraft product.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23050805'/%3E%3Ctext x='2' y='12' font-family='monospace' font-size='11' fill='%2344ff77'%3E%26gt;_%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="vendor/xterm.css">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <noscript>
-    <div class="noscript">DIGITBOX MCVM requires JavaScript — it boots a WebAssembly JVM in your browser.</div>
+    <div class="noscript">DIGITBOX DEV VM requires JavaScript — it boots a WebAssembly JVM in your browser.</div>
   </noscript>
 
-  <!-- CRT terminal -->
+  <!-- CRT shell: a real terminal (xterm.js) on top, the option tray below.
+       There is no typed input anywhere — the VM drives itself and every
+       decision is a button. -->
   <div id="crt">
-    <div id="terminal" aria-live="polite">
-      <div id="scrollback"></div>
-      <div id="inputline" hidden>
-        <span id="ps1">guest@digitbox:~$&nbsp;</span><span id="inputecho"></span><span id="cursor">█</span>
-      </div>
-    </div>
-    <div id="chips" hidden>
-      <button data-cmd="play">▶ play</button>
-      <button data-cmd="help">help</button>
-      <button data-cmd="versions">versions</button>
-      <button data-cmd="loaders">loaders</button>
-      <button data-cmd="mods add">mods add</button>
-      <button data-cmd="about">about</button>
-    </div>
-    <!-- command bar: invisible capture input on desktop, visible docked bar on touch -->
-    <div id="cmdbar">
-      <span id="cmdps1">guest@digitbox:~$</span>
-      <input id="kbd" type="text" enterkeyhint="go" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="terminal command input" placeholder="type a command…">
-      <button id="runbtn" type="button">RUN</button>
-    </div>
+    <div id="term" aria-live="polite"></div>
+    <div id="tray" hidden></div>
   </div>
 
-  <!-- Game video output -->
+  <!-- Game video output. Takes the whole screen once the game starts;
+       LOGS slides the terminal back over it. -->
   <div id="gamepanel" hidden>
     <div id="gamebar">
-      <span id="gametitle">MCVM ▸ —</span>
+      <span id="gametitle">DEV VM ▸ —</span>
       <span class="grow"></span>
-      <button id="btn-keys" title="On-screen keys (touch)">⌨ KEYS</button>
-      <button id="btn-fs" title="Fullscreen">⛶ FULL</button>
-      <button id="btn-power" title="Power off wipes the sandbox and reboots the terminal">⏻ POWER</button>
+      <button id="btn-logs" type="button" title="Toggle the log terminal over the game">☰ LOGS</button>
+      <button id="btn-keys" type="button" title="On-screen keys (touch)">⌨ KEYS</button>
+      <button id="btn-fs" type="button" title="Fullscreen">⛶ FULL</button>
+      <button id="btn-power" type="button" title="Power off wipes the sandbox and reboots the VM">⏻ POWER</button>
     </div>
     <div id="display"></div>
     <div id="touchkeys" hidden>
@@ -76,6 +63,8 @@
 
   <input id="filepick" type="file" accept=".jar,.zip" multiple hidden>
 
+  <script src="vendor/xterm.js"></script>
+  <script src="vendor/xterm-addon-fit.js"></script>
   <script type="module" src="js/main.js"></script>
 </body>
 </html>
