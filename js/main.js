@@ -6,6 +6,7 @@
 import { Term, C, sleep } from './term.js';
 import * as mojang from './mojang.js';
 import * as vm from './vm.js';
+import * as x86 from './x86vm.js';
 import { mods, pickModFiles, patchClientJar } from './mods.js';
 
 const term = new Term(document.getElementById('term'), document.getElementById('tray'));
@@ -80,7 +81,20 @@ async function boot() {
     ['Mojang or Microsoft. Game code streams from Mojang at runtime.', C.dim, 20],
   ], 40);
 
-  wizard();
+  mainMenu();
+}
+
+// ---------------- run-mode picker ----------------
+
+async function mainMenu() {
+  term.print('');
+  term.print('SELECT RUN MODE', C.bright);
+  const mode = await term.choose([
+    { label: '▶ MINECRAFT — browser JVM (runs 1.2.5 ✓, attempts pre-1.6)', value: 'mc', kind: 'primary', echo: 'run minecraft' },
+    { label: '🖥 REAL x86 LINUX VM — full-system emulator (experimental)', value: 'x86', kind: '', echo: 'run x86vm' },
+  ]);
+  if (mode === 'x86') return x86Intro();
+  return wizard();
 }
 
 // ---------------- the guided loop ----------------
@@ -313,6 +327,95 @@ async function afterRun(v) {
     return runClient(v);
   }
   if (a === 'change') return wizard();
+  await vm.wipeSandbox();
+  location.reload();
+}
+
+// ---------------- real x86 VM flow ----------------
+
+let x86Input = null; // xterm input disposable while the VM is live
+
+async function x86Intro() {
+  term.print('');
+  term.print('REAL x86 VIRTUAL MACHINE (experimental)', C.bright);
+  [
+    'This boots a genuine full-system emulator (v86, a WebAssembly x86 PC):',
+    'SeaBIOS, an x86 CPU, RAM and devices — then a small Linux kernel to a real',
+    'shell on the serial console. Unlike the Minecraft mode (which is a Java VM),',
+    'this is a whole emulated computer. The terminal below becomes its console.',
+  ].forEach((t) => term.print(t, C.dim));
+  term.print('Honest limits:', C.warn);
+  [
+    '  • No GPU is emulated — this is a text/serial machine. It proves "a real VM',
+    '    in the browser", but it will NOT run modern Minecraft playably (that needs',
+    '    a GPU and a hundreds-of-MB JRE). Use the Minecraft (browser JVM) mode to',
+    '    actually play 1.2.5.',
+    '  • Everything is ephemeral: the machine is discarded when you power it off.',
+  ].forEach((t) => term.print(t, C.dim));
+
+  const go = await term.choose([
+    { label: '⚡ BOOT THE x86 VM ▸', value: true, kind: 'primary', echo: './boot-vm.sh ' + x86.IMAGE_NAME },
+    { label: '← BACK TO RUN MODE', value: false, kind: 'dim', echo: false },
+  ]);
+  if (!go) return mainMenu();
+  await bootX86();
+}
+
+async function bootX86() {
+  term.cmd('./boot-vm.sh --serial');
+  const prog = term.live(C.info);
+  prog(`fetching ${x86.IMAGE_NAME} …`);
+  try {
+    await x86.boot({
+      onSerial: (s) => term.raw(s),
+      onProgress: (e) => {
+        if (e && e.total) prog(progressBar('kernel image', e.loaded || 0, e.total));
+      },
+      log: (t) => term.print('[x86] ' + t, C.dim),
+    });
+    prog.done('kernel image loaded — powering on the emulated PC …');
+    term.print('');
+    term.print('── serial console (ttyS0) — a real emulated x86 machine ──', C.dim);
+    term.print('Type below (Enter runs). Try: uname -a · cat /proc/cpuinfo · ls /', C.dim);
+    term.raw('\r\n');
+    x86Input = term.onInput((d) => x86.send(d)); // terminal → guest keystrokes
+    term.focusTerm();
+    x86Controls();
+  } catch (e) {
+    prog.done('x86 VM failed to boot: ' + (e?.message ?? String(e)));
+    await afterX86();
+  }
+}
+
+// Persistent controls: quick commands (great on mobile, no typing needed) + stop.
+function x86Controls() {
+  term.toolbar([
+    { label: 'uname -a', onClick: () => x86.send('uname -a\n') },
+    { label: 'cpuinfo', onClick: () => x86.send('head -20 /proc/cpuinfo\n') },
+    { label: 'ls /', onClick: () => x86.send('ls -la /\n') },
+    { label: 'free', onClick: () => x86.send('free -m\n') },
+    { label: '⌨ TYPE HERE', onClick: () => term.focusTerm() },
+    { label: '⏻ POWER OFF VM', kind: 'danger', onClick: () => stopX86() },
+  ]);
+}
+
+async function stopX86() {
+  if (x86Input) { try { x86Input.dispose(); } catch { /* ignore */ } x86Input = null; }
+  await x86.stop();
+  term.hideTray();
+  term.print('');
+  term.print('x86 VM powered off. Nothing was saved.', C.info);
+  await afterX86();
+}
+
+async function afterX86() {
+  const a = await term.choose([
+    { label: '⚡ BOOT THE x86 VM AGAIN', value: 'again', kind: 'primary', echo: './boot-vm.sh' },
+    { label: '▶ SWITCH TO MINECRAFT MODE', value: 'mc', echo: 'run minecraft' },
+    { label: '⏻ REBOOT PAGE (full wipe)', value: 'reboot', kind: 'danger', echo: 'reboot' },
+  ]);
+  if (a === 'again') return bootX86();
+  if (a === 'mc') return wizard();
   await vm.wipeSandbox();
   location.reload();
 }

@@ -83,6 +83,14 @@ export class Term {
     this.xt.writeln(color ? color + text + SGR.reset : text);
   }
 
+  // raw write, no newline — used to stream a VM's serial console straight in
+  raw(s) { this.xt.write(s); }
+
+  // typed input (Enter arrives as \r) — returns an xterm disposable
+  onInput(cb) { return this.xt.onData(cb); }
+
+  focusTerm() { this.xt.focus(); }
+
   // shell-style echo of a command the VM runs on the user's behalf
   cmd(line) {
     this.xt.writeln(`${SGR.ok}dev@digitbox${SGR.reset}:${SGR.blue}~/mc-workspace${SGR.reset}$ ${SGR.bright}${line}${SGR.reset}`);
@@ -152,6 +160,32 @@ export class Term {
       });
       this.xt.scrollToBottom();
     });
+  }
+
+  // Persistent button bar (does not resolve). buttons: [{ label, kind?, onClick }]
+  // Used for the live x86 VM controls, where the terminal itself takes input.
+  toolbar(buttons, { scroll = true } = {}) {
+    this._pick = null;
+    this._opts = null;
+    this.tray.innerHTML = '';
+    this.tray.classList.toggle('scroll', scroll);
+    this.tray.hidden = false;
+    for (const b of buttons) {
+      const el = document.createElement('button');
+      el.type = 'button';
+      el.className = 'opt' + (b.kind ? ' k-' + b.kind : '');
+      el.textContent = b.label;
+      el.addEventListener('click', () => b.onClick && b.onClick());
+      this.tray.appendChild(el);
+    }
+    this.xt.scrollToBottom();
+  }
+
+  hideTray() {
+    this._pick = null;
+    this._opts = null;
+    this.tray.hidden = true;
+    this.tray.innerHTML = '';
   }
 }
 

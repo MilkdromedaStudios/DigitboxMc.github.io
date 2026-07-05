@@ -15,6 +15,15 @@ time). A Fabric-style dev-environment loop — pick version → stage mods →
 runClient → read logs — for the jar-mod era that a browser JVM can genuinely
 run.
 
+## Two VMs
+
+At boot you pick a **run mode**:
+
+- **Minecraft (browser JVM)** — the default, described above. [CheerpJ](https://cheerpj.com) is a real *Java* VM (a JVM compiled to WebAssembly); it runs the untouched official client. This is the mode that actually plays: 1.2.5 is proven and every pre-1.6 build attempts for real.
+- **Real x86 Linux VM (experimental)** — [v86](https://github.com/copy/v86) is a full-system emulator: a genuine emulated PC (SeaBIOS, x86 CPU, RAM, devices) that boots a small Linux kernel to a real shell. Its serial console *is* the terminal — type commands, run `uname -a`, `cat /proc/cpuinfo`, `ls /`. This answers "make it an actual VM, not just Browsercraft": it is a whole emulated computer, not a JVM.
+
+**Why the x86 VM does not run Minecraft:** v86 emulates no GPU, so it is a text/serial machine — it proves "a real VM in the browser" but modern Minecraft needs a GPU and a hundreds-of-MB JRE, which a software-emulated PC in a tab cannot drive at a playable frame rate. Running Minecraft for real is what the browser-JVM mode is for. (Running *all* versions / Fabric in a browser is blocked by hard walls; see [Honest limits](#honest-limits) — every Fabric version uses LWJGL 3, whose GLFW native windowing has no browser implementation.)
+
 ## How it works
 
 | Piece | What actually happens |
@@ -26,8 +35,9 @@ run.
 | Minecraft itself | The **untouched official client jar is streamed from Mojang's CDN at run** (`piston-data.mojang.com`). This repository contains **zero** Mojang code or assets |
 | Logs | Download progress, library resolution and JVM boot stream into the terminal; once the game launches the logs hide behind it. The game's real `System.out`/`System.err` are mirrored into the terminal, so ☰ LOGS shows a live game log, dev-env style |
 | Mod loading | Staged jars are genuinely merged into the client jar with `META-INF` stripped — the authentic ModLoader / early-Forge install procedure, performed in-browser and in RAM. Each mod's loader is auto-detected; Fabric/Quilt/modern-Forge files are flagged as impossible here |
+| Real x86 VM | [v86](https://github.com/copy/v86) (MIT) — an x86 PC emulator in WebAssembly. Core, SeaBIOS and a ~5 MiB buildroot Linux kernel are all vendored in `vendor/v86/`, so the machine is fully self-contained. The guest's serial console is wired straight into the terminal, and quick-command buttons (`uname -a`, `cpuinfo`, `ls /`, `free`) make it usable on mobile without typing |
 | Sandbox | All origin storage (IndexedDB, localStorage) is destroyed on every boot and on page hide. ⏻ POWER wipes and reboots. Nothing persists, by design |
-| Mobile | No soft keyboard ever opens — the whole flow is buttons. Full-width tap targets, safe-area-aware layout, and an on-screen game pad (W/A/S/D/JUMP/SNEAK + MINE/USE) that appears automatically on touch devices |
+| Mobile | No soft keyboard is forced — the whole flow is buttons. Full-width tap targets, safe-area-aware layout, and an on-screen game pad (W/A/S/D/JUMP/SNEAK + MINE/USE) that appears automatically on touch devices. In the x86 VM, `⌨ TYPE HERE` raises the soft keyboard on demand |
 
 ## Honest limits
 
