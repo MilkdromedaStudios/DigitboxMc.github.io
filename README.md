@@ -38,6 +38,53 @@ At boot you pick a **run mode**:
 | Real x86 VM | [v86](https://github.com/copy/v86) (MIT) — an x86 PC emulator in WebAssembly. Core, SeaBIOS and a ~5 MiB buildroot Linux kernel are all vendored in `vendor/v86/`, so the machine is fully self-contained. The guest's serial console is wired straight into the terminal, and quick-command buttons (`uname -a`, `cpuinfo`, `ls /`, `free`) make it usable on mobile without typing |
 | Sandbox | All origin storage (IndexedDB, localStorage) is destroyed on every boot and on page hide. ⏻ POWER wipes and reboots. Nothing persists, by design |
 | Mobile | No soft keyboard is forced — the whole flow is buttons. Full-width tap targets, safe-area-aware layout, and an on-screen game pad (W/A/S/D/JUMP/SNEAK + MINE/USE) that appears automatically on touch devices. In the x86 VM, `⌨ TYPE HERE` raises the soft keyboard on demand |
+| AI assistant | A tiny **🤖 AI** puck under the game bar opens a mini, tabbed panel: **Chat** (an offline mini-wiki that answers survival questions and drops private tips) and **Possess** (a *restricted* auto-play mode). It's local — no backend, no accounts, no network — so it works on any server and, by construction, cannot get you banned. See below |
+
+## AI assistant + restricted possession
+
+A **🤖 AI** button on the game bar opens an absolutely-mini panel (tucked under
+the bar on the right, clear of the touch pad — it never overlaps another
+button). The overlay is click-through, so empty space still taps the game; only
+the panel itself takes input. It has two tabs:
+
+- **Chat** — a private, offline "mini-wiki". Ask it about mining, diamonds,
+  tools, mobs, food, the Nether or surviving the first night and it answers from
+  a built-in knowledge base. It can also **watch the screen and drop occasional
+  tips** (e.g. "it looks dark — mobs spawn in low light") into this chat, and
+  this chat only. History is saved **up to 100 messages per chat and up to 100
+  saved chats** (a ring buffer; oldest drop off), with a chat switcher, scrolling
+  and compact text so it never gets overwhelming. It is reachable whenever the
+  mouse is free — the ESC menu, your inventory, a chest, any open UI.
+- **Possess (restricted)** — engage it, aim your crosshair, and type an
+  instruction ("mine", "tunnel 10s", "walk forward 5s", "strafe left", "jump",
+  "sneak", "use", "slot 3"). The AI carries it out for you. Continuous tasks
+  auto-stop after 60 s (or your stated duration), and **■ STOP** drops everything
+  instantly.
+
+**Why it works on any server — even without BlockPal.** Nothing is installed
+server-side. Possession drives the game the exact same way the on-screen touch
+pad does: ordinary DOM keystrokes and clicks aimed at the game canvas — the same
+events a human hand produces. There is no companion mod to require and no server
+plugin to detect.
+
+**Why it can't get you banned.** Because it can only do what a legitimate player
+physically can, it stays inside the rules on every server:
+
+- **No PvP and no combat at all** — without BlockPal it is deliberately limited
+  to *basic tasks* (mining, gathering, moving) so it can never gain an unfair
+  fighting advantage. Any instruction mentioning attacking, hitting, killing or
+  PvP is hard-refused.
+- **It never touches the game's chat box** and never runs commands — chat/say/
+  command intents are refused, and the possession engine has no key bound to
+  chat.
+- **No cheat surface**: there's no packet layer to forge, so fly, reach, x-ray,
+  no-fall, speed and kill-aura are simply unreachable; clicks are paced to human
+  speed (mining is a held button, not an auto-clicker).
+- **Everything is local and private**: no data leaves your browser, and (like
+  the rest of this VM) the chat history is ephemeral — it's wiped on power-off.
+
+The **🛡 RESTRICTED · no PvP · no chat · ban-safe** badge on the Possess tab is a
+standing reminder of exactly what it will and won't do.
 
 ## Honest limits
 
@@ -63,6 +110,14 @@ This is a real browser JVM, not magic. Verified by launching each era:
   auto-generated offline profile; singleplayer only.
 - Performance depends on the device; a desktop browser is recommended. It does start
   on Android Chrome, slowly.
+- **The AI is a small offline helper, not a large model.** It answers from a built-in
+  knowledge base (so it's best on the classic-era topics this VM runs) and possesses
+  the player through plain synthetic input — it has no world map, so it can't pathfind,
+  craft through menus, or navigate to a place. It mines whatever your crosshair points
+  at and moves on command. That narrowness is deliberate: it's what keeps it ban-safe.
+  This build ships singleplayer (see the Microsoft-sign-in note above), so "works on
+  any server" describes the design — no BlockPal or server plugin is ever needed —
+  rather than a multiplayer feature of this particular static demo.
 
 ## Deploying
 
