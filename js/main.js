@@ -8,6 +8,8 @@ import * as mojang from './mojang.js';
 import * as vm from './vm.js';
 import * as x86 from './x86vm.js';
 import { mods, pickModFiles, patchClientJar } from './mods.js';
+import { sendKey, sendMouse } from './input.js';
+import { AI } from './ai.js';
 
 const term = new Term(document.getElementById('term'), document.getElementById('tray'));
 const gamepanel = document.getElementById('gamepanel');
@@ -428,6 +430,7 @@ function showGame(on) {
   document.body.classList.remove('logsview');
   btnLogs.textContent = '☰ LOGS';
   if (on && TOUCH) touchkeys.hidden = false; // pad appears automatically on touch
+  AI.setInGame(on); // reveal the AI launcher only while a game is on screen
 }
 
 btnLogs.addEventListener('click', () => {
@@ -450,25 +453,14 @@ document.getElementById('btn-keys').addEventListener('click', () => {
   touchkeys.hidden = !touchkeys.hidden;
 });
 
-// Synthetic key events for touch play; CheerpJ listens for standard DOM
-// keyboard events on the page.
-const KEYMAP = {
-  KeyW: ['w', 87], KeyA: ['a', 65], KeyS: ['s', 83], KeyD: ['d', 68],
-  KeyE: ['e', 69], Space: [' ', 32], ShiftLeft: ['Shift', 16], Escape: ['Escape', 27],
-};
-function sendKey(code, type) {
-  const [key, keyCode] = KEYMAP[code];
-  const ev = new KeyboardEvent(type, { key, code, keyCode, which: keyCode, bubbles: true, cancelable: true });
-  (display.querySelector('canvas') ?? display).dispatchEvent(ev);
-  document.dispatchEvent(ev);
-}
-function sendMouse(button, type) {
-  const canvas = display.querySelector('canvas') ?? display;
-  const r = canvas.getBoundingClientRect();
-  const x = r.left + r.width / 2, y = r.top + r.height / 2; // aim at crosshair
-  const ev = new MouseEvent(type, { button, buttons: type === 'mousedown' ? (button === 0 ? 1 : 2) : 0, clientX: x, clientY: y, bubbles: true, cancelable: true });
-  canvas.dispatchEvent(ev);
-}
+// AI assistant + restricted possession mode. Local/offline: it only ever
+// dispatches the same synthetic input the touch pad does, so it can mine and
+// move but can never PvP, chat, or do anything ban-worthy. See ai.js.
+AI.init({ isGameRunning: vm.isGameRunning });
+document.getElementById('btn-ai').addEventListener('click', () => AI.toggle());
+
+// Synthetic key/mouse events for touch play (shared with the AI possession
+// engine, see input.js); CheerpJ listens for standard DOM events on the page.
 for (const btn of touchkeys.querySelectorAll('button')) {
   const code = btn.dataset.key;
   const mouse = btn.dataset.mouse;
@@ -525,4 +517,4 @@ function progressBar(label, got, total) {
 boot();
 
 // console/debug handle (everything here is ephemeral anyway)
-window.MCVM = { term, mods, state, vm, mojang };
+window.MCVM = { term, mods, state, vm, mojang, AI };

@@ -194,6 +194,7 @@ body.logsview #crt {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0; /* let the title shrink so the button row never overflows */
 }
 #gamebar button {
   font-family: var(--mono);
@@ -251,6 +252,291 @@ body.logsview #crt {
 }
 #touchkeys button:active { background: var(--sel); }
 #touchkeys button[data-mouse] { border-color: var(--amber); color: var(--amber); }
+
+/* ---------- AI assistant + restricted possession panel ----------
+   Absolutely mini: a tiny launcher that opens a compact, tabbed panel tucked
+   under the game bar on the right, clear of the bottom touch pad. The root is
+   a click-through overlay — only the launcher/panel themselves take input, so
+   it never steals taps from the game or other buttons. */
+
+#ai-root {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  pointer-events: none; /* empty space passes taps through to the game */
+}
+#ai-root[hidden] { display: none; }
+
+.ai-launch, .ai-panel {
+  pointer-events: auto;
+  position: absolute;
+  top: calc(var(--gamebar-h) + env(safe-area-inset-top) + 6px);
+  right: max(8px, env(safe-area-inset-right));
+  font-family: var(--mono);
+}
+
+/* collapsed: an absolutely-mini 34px puck */
+.ai-launch {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--fg-bright);
+  background: rgba(6, 14, 8, 0.9);
+  border: 1px solid var(--fg-dim);
+  border-radius: 9px;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(59, 242, 115, 0.15);
+}
+.ai-launch:hover, .ai-launch:active { background: var(--sel); }
+.ai-launch[hidden] { display: none; }
+.ai-dot {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 6px var(--amber);
+}
+.ai-dot[hidden] { display: none; }
+
+.ai-panel {
+  width: min(300px, 82vw);
+  max-height: min(58dvh, 430px);
+  display: flex;
+  flex-direction: column;
+  background: rgba(5, 11, 6, 0.94);
+  border: 1px solid var(--fg-dim);
+  border-radius: 10px;
+  box-shadow: 0 6px 26px rgba(0, 0, 0, 0.55), 0 0 12px rgba(59, 242, 115, 0.12);
+  overflow: hidden;
+  color: var(--fg-bright);
+  font-size: 12px;
+}
+.ai-panel[hidden] { display: none; }
+
+.ai-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 6px 6px 8px;
+  border-bottom: 1px solid rgba(29, 143, 69, 0.5);
+  background: rgba(10, 20, 11, 0.7);
+}
+.ai-tabs { display: flex; gap: 4px; flex: 1; }
+.ai-tab {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ai-tab.is-on {
+  color: #04170a;
+  background: var(--fg);
+  font-weight: bold;
+}
+.ai-tab:not(.is-on):hover { color: var(--fg-bright); border-color: var(--fg-dim); }
+.ai-x {
+  font-family: var(--mono);
+  font-size: 16px;
+  line-height: 1;
+  color: var(--fg-dim);
+  background: transparent;
+  border: none;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.ai-x:hover { color: var(--red); }
+
+.ai-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+.ai-view[hidden] { display: none; }
+
+/* chat toolbar: saved-chat switcher + new/clear */
+.ai-chatbar {
+  flex: none;
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 1px solid rgba(29, 143, 69, 0.3);
+}
+.ai-select {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-bright);
+  background: rgba(6, 14, 8, 0.9);
+  border: 1px solid var(--fg-dim);
+  border-radius: 6px;
+  padding: 3px 4px;
+}
+.ai-mini {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--fg-bright);
+  background: rgba(59, 242, 115, 0.07);
+  border: 1px solid var(--fg-dim);
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.ai-mini:hover { background: var(--sel); }
+
+/* the scroll region — the one part that grows, everything else stays compact */
+.ai-messages {
+  flex: 1;
+  min-height: 90px;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--fg-dim) transparent;
+}
+.ai-empty { color: var(--fg-dim); font-size: 11px; text-align: center; margin: auto 6px; }
+
+.ai-msg { display: flex; }
+.ai-msg.ai-you { justify-content: flex-end; }
+.ai-bubble {
+  max-width: 86%;
+  padding: 6px 9px;
+  border-radius: 10px;
+  line-height: 1.38;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.ai-you .ai-bubble {
+  background: var(--fg);
+  color: #04170a;
+  border-bottom-right-radius: 3px;
+}
+.ai-ai .ai-bubble {
+  background: rgba(59, 242, 115, 0.09);
+  border: 1px solid rgba(29, 143, 69, 0.55);
+  color: var(--fg-bright);
+  border-bottom-left-radius: 3px;
+}
+.ai-tip .ai-bubble {
+  background: rgba(92, 215, 255, 0.08);
+  border: 1px dashed var(--cyan);
+  color: var(--cyan);
+  font-size: 11px;
+}
+
+/* input row (shared by chat + possession) */
+.ai-inputrow {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  border-top: 1px solid rgba(29, 143, 69, 0.4);
+  align-items: flex-end;
+}
+.ai-input {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--fg-bright);
+  background: rgba(6, 14, 8, 0.9);
+  border: 1px solid var(--fg-dim);
+  border-radius: 8px;
+  padding: 7px 8px;
+  max-height: 84px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--fg-dim) transparent;
+}
+.ai-input:focus { outline: none; border-color: var(--fg); }
+.ai-input::placeholder { color: var(--fg-dim); }
+.ai-send {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 14px;
+  color: #04170a;
+  background: var(--fg);
+  border: 1px solid var(--fg);
+  border-radius: 8px;
+  padding: 0 11px;
+  min-height: 34px;
+  cursor: pointer;
+}
+.ai-send:hover { background: var(--fg-bright); }
+
+/* possession tab */
+.ai-possess { padding: 8px; gap: 8px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--fg-dim) transparent; }
+.ai-badge {
+  flex: none;
+  font-size: 10px;
+  letter-spacing: 0.3px;
+  color: var(--amber);
+  border: 1px solid var(--amber);
+  border-radius: 6px;
+  padding: 4px 6px;
+  text-align: center;
+}
+.ai-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--fg-bright);
+  cursor: pointer;
+}
+.ai-toggle input { accent-color: var(--fg); width: 15px; height: 15px; }
+.ai-mon { font-size: 11px; color: var(--fg-dim); border-top: 1px solid rgba(29,143,69,0.3); padding-top: 8px; margin-top: auto; }
+.ai-status { font-size: 11px; color: var(--fg-dim); line-height: 1.4; min-height: 15px; }
+.ai-possbody { display: flex; flex-direction: column; gap: 7px; }
+.ai-possbody[hidden] { display: none; }
+.ai-possbody .ai-inputrow { padding: 0; border: none; }
+.ai-stop {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: bold;
+  color: var(--red);
+  background: transparent;
+  border: 1px solid var(--red);
+  border-radius: 8px;
+  padding: 7px;
+  cursor: pointer;
+}
+.ai-stop:hover { background: rgba(255, 92, 92, 0.12); }
+.ai-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.ai-chip {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-bright);
+  background: rgba(59, 242, 115, 0.06);
+  border: 1px solid var(--fg-dim);
+  border-radius: 20px;
+  padding: 3px 9px;
+  cursor: pointer;
+}
+.ai-chip:hover { background: var(--sel); }
+
+@media (max-width: 640px) {
+  .ai-panel { width: min(300px, 88vw); max-height: min(56dvh, 400px); }
+}
 
 /* ---------- small screens ---------- */
 
